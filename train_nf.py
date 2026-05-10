@@ -51,7 +51,7 @@ def dataset(flag="train", prediction_length=50, context_length=50, data: torch.T
     return data.TensorDataset(context_tensor, ground_truth_tensor)
             
 
-def train(prediction_length=50, context_length=50, batch_size=128, epochs=1000):
+def train(dataset, prediction_length=50, context_length=50, batch_size=128, epochs=1000):
     flow = zuko.flows.NSF(features=prediction_length, transforms=3, context=context_length, hidden_features=(64, 64))
     
 def parse_args():
