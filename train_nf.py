@@ -53,7 +53,7 @@ def parse_args():
     
 if __name__ == "__main__":
     args = parse_args()
-    extracted_data = extraxct_data(args.data_path)
+    extracted_data = extraxct_data(args.data_path).float()
     train_dataset = dataset(flag="train", prediction_length=args.prediction_length, context_length=args.context_length, data=extracted_data)
     val_dataset = dataset(flag="val", prediction_length=args.prediction_length, context_length=args.context_length, data=extracted_data)
-    train(train_dataset, val_dataset, prediction_length=args.prediction_length, context_length=args.context_length, batch_size=args.batch_size, epochs=args.epochs)
+    train(train_dataset, val_dataset, prediction_length=args.prediction_length, context_length=args.context_length, batch_size=args.batch_size, epochs=args.epochs, path=args.output)
