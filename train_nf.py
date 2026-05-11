@@ -1,69 +1,59 @@
-from datasets import two_moons
+from utils import evaluate, two_moons, dataset, extraxct_data
 import torch.utils.data as data
 import torch
-import zuko
+import zuko            
+from tqdm import tqdm
+import logging 
 
-def dataset(flag="train", prediction_length=50, context_length=50, data: torch.Tensor = None, stride: int = 1, val_portion: float = 0.1) -> data.Dataset:
-    #data is torch.tensor of shape (N, T) and is univariate time series data
-    #createing training examples
-    if flag == "train":
-        split_index = int(data.shape[1] * (1 - val_portion))
-        training_set =data[: , :split_index]
-        
-        contexts,ground_truths =[],[]
-        for i in range(0, training_set.shape[1], stride):
-            if i+context_length + prediction_length > training_set.shape[1]:
-                break  
-            context = training_set[:, i:i+context_length]
-            ground_truth = training_set[:, i+context_length:i+context_length+prediction_length]
-            
-            contexts.append(context)
-            ground_truths.append(ground_truth)
-        
-    if flag=="val":
-        split_index = int(data.shape[1] * (1 - val_portion))
-        validation_set =data[: , split_index:]
-        
-        contexts,ground_truths =[],[]
-        for i in range(0, validation_set.shape[1], stride):
-            if i+context_length + prediction_length > validation_set.shape[1]:
-                break  
-            context = validation_set[:, i:i+context_length]
-            ground_truth = validation_set[:, i+context_length:i+context_length+prediction_length]
-            
-            contexts.append(context)
-            ground_truths.append(ground_truth)
-        
-    if flag=="test":
-        contexts,ground_truths =[],[]
-        for i in range(0, data.shape[1], stride):
-            if i+context_length + prediction_length > data.shape[1]:
-                break  
-            context = data[:, i:i+context_length]
-            ground_truth = data[:, i+context_length:i+context_length+prediction_length]
-            
-            contexts.append(context)
-            ground_truths.append(ground_truth)
-        
-    context_tensor = torch.stack(contexts)
-    ground_truth_tensor = torch.stack(ground_truths)
-    
-    return data.TensorDataset(context_tensor, ground_truth_tensor)
-            
-
-def train(dataset, prediction_length=50, context_length=50, batch_size=128, epochs=1000):
+def train(train_dataset, val_dataset, prediction_length=50, context_length=50, batch_size=128, epochs=1000, path="best_model.pth"):
     flow = zuko.flows.NSF(features=prediction_length, transforms=3, context=context_length, hidden_features=(64, 64))
+    optimizer = torch.optim.Adam(flow.parameters(), lr=1e-3)
+    train_loader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    
+    patience = 10
+    counter = 0
+    best_val_loss = float('inf')
+    
+    for epoch in range(epochs):
+        flow.train()
+        total_loss = 0
+        for context, ground_truth in train_loader:
+            optimizer.zero_grad()
+            loss = -flow(context).log_prob(ground_truth).mean()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item() * context.size(0)
+        avg_loss = total_loss / len(train_loader.dataset)
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+        
+        if epoch % 10 == 0:
+            val_loss = evaluate(flow, val_dataset, prediction_length, context_length)
+            print(f"Validation Loss: {val_loss:.4f}")
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(flow.state_dict(), path)
+                counter = 0
+            else:
+                counter += 1
+                if counter >= patience:
+                    print("Early stopping triggered.")
+                    break
     
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--prediction_length", type=int, default=50)
-    parser.add_argument("--context_length", type=int, default=50)
-    parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=1000)
+    parser.add_argument("--prediction_length", "-p", type=int, default=50)
+    parser.add_argument("--context_length","-c", type=int, default=50)
+    parser.add_argument("--batch_size","-b", type=int, default=128)
+    parser.add_argument("--epochs","-e", type=int, default=1000)
     parser.add_argument("--data_path","-d", type=str, required=True)
+    parser.add_argument("--output","-o" , type=str, default="best_model.pth")
     return parser.parse_args()
     
     
 if __name__ == "__main__":
     args = parse_args()
+    extracted_data = extraxct_data(args.data_path)
+    train_dataset = dataset(flag="train", prediction_length=args.prediction_length, context_length=args.context_length, data=extracted_data)
+    val_dataset = dataset(flag="val", prediction_length=args.prediction_length, context_length=args.context_length, data=extracted_data)
+    train(train_dataset, val_dataset, prediction_length=args.prediction_length, context_length=args.context_length, batch_size=args.batch_size, epochs=args.epochs)

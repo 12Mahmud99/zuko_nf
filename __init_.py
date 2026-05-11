@@ -1,2 +1,2 @@
-from datasets import two_moons
+from utils import two_moons
 
